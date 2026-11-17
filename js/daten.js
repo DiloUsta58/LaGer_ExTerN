@@ -2631,7 +2631,7 @@ function importAllData___OLD_VERSION() {
 
     data        = Array.isArray(json.ke)      ? json.ke      : [];
     fsData      = Array.isArray(json.fs)      ? json.fs      : [];
-    fmData      = Array.isArray(json.fm)      ? json.fm      : [];
+    fmData      = ensureFMManualRow(Array.isArray(json.fm) ? json.fm : []);
     historyData = Array.isArray(json.history) ? json.history : [];
 
     saveData();
@@ -2738,7 +2738,7 @@ function importAllData() {
     try {
       if (json.ke) data = json.ke.data || [];
       if (json.fs) fsData = migrateFS(json.fs);
-      if (json.fm) fmData = json.fm.data || [];
+      if (json.fm) fmData = ensureFMManualRow(json.fm.data || []);
       if (json.history) historyData = json.history.data || [];
 
       saveData();

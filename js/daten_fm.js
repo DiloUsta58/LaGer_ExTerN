@@ -10,6 +10,14 @@ const FM_EDITABLE_FIELDS = [
   "bestand",
   "bemerkung"
 ];
+const FM_MANUAL_POSITION = 35;
+const FM_MANUAL_FIELDS = ["artikel1", "artikel2", "artikel", "koernung", "abmessung", "verpackung"];
+
+function canEditFMField(rowIndex, field) {
+  const row = fmData[rowIndex];
+  return !!row && (FM_EDITABLE_FIELDS.includes(field) ||
+    (Number(row.pos1) === FM_MANUAL_POSITION && FM_MANUAL_FIELDS.includes(field)));
+}
 /* =====================================================
    STATUS
 ===================================================== */
@@ -468,8 +476,30 @@ const DEFAULT_FM_DATA = [
     bestand: 0,
     bemerkung: "",
     _isDefault: true
+  },
+  {
+    pos1: 35,
+    artikel1: "",
+    artikel2: "",
+    artikel: "",
+    koernung: "",
+    abmessung: "",
+    verpackung: "",
+    pos_Nr: "35",
+    bestand: 0,
+    bemerkung: "",
+    _isDefault: true
   }
 ];
+
+// Bestehende Lagerdaten und alte Backups um die neue Position ergänzen.
+function ensureFMManualRow(rows) {
+  if (!Array.isArray(rows)) return structuredClone(DEFAULT_FM_DATA);
+  if (!rows.some(row => Number(row.pos1) === FM_MANUAL_POSITION)) {
+    rows.push(structuredClone(DEFAULT_FM_DATA.find(row => row.pos1 === FM_MANUAL_POSITION)));
+  }
+  return rows;
+}
 
 let fmData = loadFMData();
 /* Daten Laden */
@@ -477,7 +507,7 @@ function loadFMData() {
   const stored = localStorage.getItem(FM_STORAGE_KEY);
   if (stored) {
     try {
-      return JSON.parse(stored);
+      return ensureFMManualRow(JSON.parse(stored));
     } catch {
       return structuredClone(DEFAULT_FM_DATA);
     }
@@ -492,17 +522,20 @@ function saveFMData() {
 
 /* Edit funktion */
 function fmCell(value, rowIndex, field) {
-  const canEdit = FM_EDITABLE_FIELDS.includes(field);
+  const canEdit = canEditFMField(rowIndex, field);
+  const displayValue = String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[char]);
   let extraClass = "";
   let tooltip = "";
 /* ===== TOOLTIP FÜR GANZE SPALTE ===== */
   if (field === "bestand") {
-    const pos = rowIndex + 1;
+    const pos = Number(fmData[rowIndex]?.pos1);
     const bestand = Number(value) || 0;
 
     tooltip = `Bestand: ${bestand}`;
 
-    if (pos >= 1 && pos <= 34) {
+    if (pos >= 1 && pos <= FM_MANUAL_POSITION) {
       extraClass = bestand === 0
         ? "fm-bestand-zero"
         : "fm-bestand-ok";
@@ -516,7 +549,7 @@ function fmCell(value, rowIndex, field) {
       title="${tooltip}"
     >
       <div class="edit-wrapper">
-        <span>${value ?? ""}</span>
+        <span>${displayValue}</span>
         ${
           canEdit
             ? `<span class="edit-icon"
@@ -530,15 +563,14 @@ function fmCell(value, rowIndex, field) {
 
 
 async function editFM(icon, rowIndex, field) {
-  AppState.isEditing = true;
-
-  if (!FM_EDITABLE_FIELDS.includes(field)) return;
+  if (!canEditFMField(rowIndex, field)) return;
 
   if (!await requireEditSaveUnlock()) return;
 
   const td = icon.closest("td");
   if (!td) return;
 
+  AppState.isEditing = true;
   const oldValue = td.querySelector("span")?.textContent ?? "";
 
   registerEditActivity();
@@ -546,12 +578,13 @@ async function editFM(icon, rowIndex, field) {
   /* ✨ Edit-UI erzeugen */
   td.innerHTML = `
     <div class="edit-wrapper">
-      <input class="cell-input" type="text" value="${oldValue}">
+      <input class="cell-input" type="text">
       <button class="edit-apply" type="button">✔️</button>
     </div>
   `;
 
   const input = td.querySelector(".cell-input");
+  input.value = oldValue;
 
     /* 🔧 Bestand: Dezimalzahl mit 2 Stellen */
     if (field === "bestand") {
@@ -645,19 +678,23 @@ function renderFM() {
   setTabCount("fm", fmFiltered.length);
   /* ===== ENDE FILTER ===== */
 
-fmFiltered.forEach((row, i) => {
+fmFiltered.forEach(row => {
+  const i = fmData.indexOf(row);
+  const manualCell = field => canEditFMField(i, field)
+    ? fmCell(row[field], i, field)
+    : `<td data-col="${field}">${highlightText(row[field] ?? "", globalSearchTerm)}</td>`;
   const bestand = Number(row.bestand) || 0;
   const bestandText = bestand.toLocaleString("de-DE");
 
   tbody.innerHTML += `
     <tr title="Lagerbestand: ${bestandText}">
         <td data-col="pos1">${highlightText(row.pos1 ?? "", globalSearchTerm)}</td>
-        <td data-col="artikel1">${highlightText(row.artikel1 ?? "", globalSearchTerm)}</td>
-        <td data-col="artikel2">${highlightText(row.artikel2 ?? "", globalSearchTerm)}</td>
-        <td data-col="artikel">${highlightText(row.artikel ?? "", globalSearchTerm)}</td>
-        <td data-col="koernung">${highlightText(row.koernung ?? "", globalSearchTerm)}</td>
-        <td data-col="abmessung">${highlightText(row.abmessung ?? "", globalSearchTerm)}</td>
-        <td data-col="verpackung">${highlightText(row.verpackung ?? "", globalSearchTerm)}</td>
+        ${manualCell("artikel1")}
+        ${manualCell("artikel2")}
+        ${manualCell("artikel")}
+        ${manualCell("koernung")}
+        ${manualCell("abmessung")}
+        ${manualCell("verpackung")}
         <td data-col="verpackung">${highlightText(row.pos_Nr ?? "", globalSearchTerm)}</td>
         ${fmCell(row.bestand, i, "bestand")}
         ${fmCell(row.bemerkung, i, "bemerkung")}
